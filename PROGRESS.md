@@ -126,3 +126,26 @@ Product images no longer need to arrive pre-processed. The pipeline can now acce
 
 ### Cost impact
 - rembg is free, self-hosted, CPU-only. Zero per-video cost. No change from Sprint 0 target.
+
+---
+
+## Sprint 4 — 2026-06-20
+
+### What was built
+- `src/pipeline/buildVideoJob.ts` — `buildVideoJob(rawInput)` orchestrates the full pipeline. Validates raw client input with `JobInputSchema` (Zod), fires `derivePalette` and `removeBackground` concurrently (independent steps), assembles and validates a complete `VideoProps` object with the auto-derived palette and a `file://` URL pointing to the processed PNG.
+- `JobInputSchema` — Zod schema for raw client input (productImagePath, outputDir, brandColor, headline, subheadline, voiceoverScript, template, aspectRatio). This is the single front door — anything malformed is rejected here before any processing starts.
+
+### What it achieves
+For the first time, all three stages talk to each other. A caller gives raw client inputs — an image path, a hex code, some copy — and gets back a fully-formed `VideoProps` ready to hand to Remotion for rendering. This is the function that a web handler, CLI, or SQS consumer will call. Every stage has its own error handling; if bg removal fails, the whole job fails loudly with the reason, not silently.
+
+### Tests added
+- `src/__tests__/buildVideoJob.test.ts` — 15 unit tests: JobInputSchema validation (6 cases), buildVideoJob behavior (9 cases) with removeBackground mocked — verifies correct args passed, file:// URL shape, palette correctness, error bubbling, optional field passthrough.
+- `src/__tests__/buildVideoJob.integration.test.ts` — 1 integration test (`INTEGRATION=true`): full pipeline on a real image, asserts processed PNG exists, props pass schema, palette brand matches input, template/ratio pass through. Verified passing.
+
+### Known issues / left undone
+- Narration (Piper TTS) not yet built — voiceoverScript is accepted and validated but not acted on.
+- No Remotion Lambda setup yet — renders still local only.
+- No web handler or CLI entry point yet — buildVideoJob exists but nothing calls it from outside the test suite.
+
+### Cost impact
+- No new dependencies. Zero per-video cost change.
