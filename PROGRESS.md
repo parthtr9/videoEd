@@ -149,3 +149,31 @@ For the first time, all three stages talk to each other. A caller gives raw clie
 
 ### Cost impact
 - No new dependencies. Zero per-video cost change.
+
+---
+
+## Sprint 5 — 2026-06-20
+
+### What was built
+- `scripts/synthesize_speech.py` — Piper TTS wrapper. Takes text, output WAV path, and ONNX model path as args. All errors to stderr with non-zero exit code. Validates model + config existence before running.
+- `src/pipeline/narration.ts` — Node async wrapper. Zod-validates inputs, checks model exists before spawning, surfaces stderr on failure, verifies output WAV was written. Exports `DEFAULT_MODEL_PATH` pointing to the bundled `en_US-lessac-medium` voice.
+- Downloaded `en_US-lessac-medium.onnx` (~60MB) voice model to `models/`. CPU-only, no GPU needed.
+- `src/schemas/videoProps.ts` — added `narrationUrl` optional field to `VideoPropsSchema` (validated URL, set to `file://` path when narration runs).
+- `src/compositions/ProductVideo.tsx` — added Remotion `<Audio src={narrationUrl} />` so narration plays in sync during render when provided.
+- `src/pipeline/buildVideoJob.ts` — narration now runs concurrently with bg removal (both are independent). `VideoJob` return type gains `narrationPath: string | null`. `narrationUrl` passed into props when script provided.
+
+### What it achieves
+Clients can now provide a voiceover script and get a video with real synthesized speech — free, CPU-only, no ElevenLabs or other paid TTS. Audio is synced to the video at render time by Remotion. When no script is provided, the video renders silently — narration is strictly opt-in, never forced.
+
+### Tests added
+- `src/__tests__/narration.test.ts` — 7 unit tests (child_process + fs mocked): empty text/path rejection, model not found, stderr surfacing, missing output WAV, success return, correct args to python3.
+- `src/__tests__/narration.integration.test.ts` — 1 real Piper integration test (`INTEGRATION=true`). Verified working on this machine.
+- 5 new tests in `buildVideoJob.test.ts`: synthesizeSpeech not called without script, called with correct text when provided, narrationPath null without script, narrationUrl in props when script provided, error bubbling from synthesizeSpeech.
+
+### Known issues / left undone
+- `models/` directory (60MB ONNX file) is not committed to git (too large for a repo). Need a download script or documented setup step for new machines and Lambda containers.
+- No CLI or web handler yet — buildVideoJob still only callable from tests.
+- Remotion Lambda not set up yet.
+
+### Cost impact
+- `piper-tts` Python package: free, open source. Voice model: free (rhasspy/piper-voices on HuggingFace). Zero per-video cost change.

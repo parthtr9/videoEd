@@ -1,13 +1,16 @@
 import path from 'path';
 
 jest.mock('../pipeline/backgroundRemoval');
+jest.mock('../pipeline/narration');
 
 import { removeBackground } from '../pipeline/backgroundRemoval';
+import { synthesizeSpeech } from '../pipeline/narration';
 import { buildVideoJob, JobInputSchema } from '../pipeline/buildVideoJob';
 import { derivePalette } from '../pipeline/colorDerivation';
 import { VideoPropsSchema } from '../schemas/videoProps';
 
 const mockRemoveBg = removeBackground as jest.MockedFunction<typeof removeBackground>;
+const mockSynthesize = synthesizeSpeech as jest.MockedFunction<typeof synthesizeSpeech>;
 
 const BASE_INPUT = {
   productImagePath: '/fake/product.jpg',
@@ -48,9 +51,12 @@ describe('JobInputSchema', () => {
 describe('buildVideoJob', () => {
   const RESOLVED_PATH = '/fake/out/product_no_bg.png';
 
+  const RESOLVED_NARRATION = '/fake/out/product_narration.wav';
+
   beforeEach(() => {
     jest.resetAllMocks();
     mockRemoveBg.mockResolvedValue(RESOLVED_PATH);
+    mockSynthesize.mockResolvedValue(RESOLVED_NARRATION);
   });
 
   it('throws on invalid raw input (Zod)', async () => {
@@ -103,5 +109,37 @@ describe('buildVideoJob', () => {
     const { props } = await buildVideoJob(BASE_INPUT);
     expect(props.subheadline).toBeUndefined();
     expect(props.voiceoverScript).toBeUndefined();
+  });
+
+  it('does not call synthesizeSpeech when voiceoverScript is omitted', async () => {
+    await buildVideoJob(BASE_INPUT);
+    expect(mockSynthesize).not.toHaveBeenCalled();
+  });
+
+  it('calls synthesizeSpeech with correct text when voiceoverScript provided', async () => {
+    const input = { ...BASE_INPUT, voiceoverScript: 'Buy now.' };
+    await buildVideoJob(input);
+    expect(mockSynthesize).toHaveBeenCalledTimes(1);
+    expect(mockSynthesize).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Buy now.' }),
+    );
+  });
+
+  it('narrationPath is null when voiceoverScript omitted', async () => {
+    const { narrationPath } = await buildVideoJob(BASE_INPUT);
+    expect(narrationPath).toBeNull();
+  });
+
+  it('narrationPath is set and narrationUrl in props when voiceoverScript provided', async () => {
+    const input = { ...BASE_INPUT, voiceoverScript: 'Buy now.' };
+    const { props, narrationPath } = await buildVideoJob(input);
+    expect(narrationPath).toBe(RESOLVED_NARRATION);
+    expect(props.narrationUrl).toBe(`file://${RESOLVED_NARRATION}`);
+  });
+
+  it('bubbles up synthesizeSpeech errors', async () => {
+    const input = { ...BASE_INPUT, voiceoverScript: 'Buy now.' };
+    mockSynthesize.mockRejectedValue(new Error('Piper failed: model missing'));
+    await expect(buildVideoJob(input)).rejects.toThrow('Piper failed');
   });
 });

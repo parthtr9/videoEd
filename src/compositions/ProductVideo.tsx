@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, useCurrentFrame, useVideoConfig, interpolate, spring } from 'remotion';
+import { AbsoluteFill, Audio, useCurrentFrame, useVideoConfig, interpolate, spring } from 'remotion';
 import { VideoProps } from '../schemas/videoProps';
 
 type Props = VideoProps & {
@@ -10,6 +10,7 @@ export const ProductVideo: React.FC<Props> = ({
   productImageUrl,
   headline,
   subheadline,
+  narrationUrl,
   template,
   palette,
 }) => {
@@ -24,6 +25,7 @@ export const ProductVideo: React.FC<Props> = ({
 
   return (
     <AbsoluteFill style={{ backgroundColor: bgColor, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 80 }}>
+      {narrationUrl && <Audio src={narrationUrl} />}
       <div style={{ transform: `scale(${imageScale})`, marginBottom: 40, maxWidth: '60%', maxHeight: '55%' }}>
         <img
           src={productImageUrl}

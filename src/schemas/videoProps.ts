@@ -22,6 +22,7 @@ export const VideoPropsSchema = z.object({
   headline: z.string().min(1).max(80),
   subheadline: z.string().max(160).optional(),
   voiceoverScript: z.string().max(500).optional(),
+  narrationUrl: z.string().url().optional(),
   template: TemplateSchema,
   aspectRatio: AspectRatioSchema,
   palette: ColorPaletteSchema.optional(),

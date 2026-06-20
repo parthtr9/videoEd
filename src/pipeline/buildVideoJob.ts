@@ -8,6 +8,7 @@ import {
 } from '../schemas/videoProps';
 import { removeBackground } from './backgroundRemoval';
 import { derivePalette } from './colorDerivation';
+import { synthesizeSpeech, DEFAULT_MODEL_PATH } from './narration';
 
 export const JobInputSchema = z.object({
   productImagePath: z.string().min(1, 'productImagePath must not be empty'),
@@ -18,6 +19,7 @@ export const JobInputSchema = z.object({
   voiceoverScript: z.string().max(500).optional(),
   template: TemplateSchema,
   aspectRatio: AspectRatioSchema,
+  modelPath: z.string().optional(),
 });
 
 export type JobInput = z.infer<typeof JobInputSchema>;
@@ -25,6 +27,7 @@ export type JobInput = z.infer<typeof JobInputSchema>;
 export interface VideoJob {
   props: VideoProps;
   processedImagePath: string;
+  narrationPath: string | null;
 }
 
 export async function buildVideoJob(rawInput: unknown): Promise<VideoJob> {
@@ -36,14 +39,30 @@ export async function buildVideoJob(rawInput: unknown): Promise<VideoJob> {
   );
   const processedImagePath = path.join(input.outputDir, `${basename}_no_bg.png`);
 
-  // Both are independent — derive palette sync, remove bg async concurrently
-  const palettePromise = Promise.resolve(derivePalette(input.brandColor));
+  // Palette is sync and instant — start bg removal async immediately
+  const palette = derivePalette(input.brandColor);
   const bgPromise = removeBackground({
     inputPath: input.productImagePath,
     outputPath: processedImagePath,
   });
 
-  const [palette, resolvedImagePath] = await Promise.all([palettePromise, bgPromise]);
+  // Narration runs concurrently with bg removal if script provided
+  const narrationPath = input.voiceoverScript
+    ? path.join(input.outputDir, `${basename}_narration.wav`)
+    : null;
+
+  const narrationPromise = narrationPath
+    ? synthesizeSpeech({
+        text: input.voiceoverScript!,
+        outputPath: narrationPath,
+        modelPath: input.modelPath ?? DEFAULT_MODEL_PATH,
+      })
+    : Promise.resolve(null);
+
+  const [resolvedImagePath, resolvedNarrationPath] = await Promise.all([
+    bgPromise,
+    narrationPromise,
+  ]);
 
   const props = VideoPropsSchema.parse({
     productImageUrl: `file://${resolvedImagePath}`,
@@ -51,10 +70,15 @@ export async function buildVideoJob(rawInput: unknown): Promise<VideoJob> {
     headline: input.headline,
     subheadline: input.subheadline,
     voiceoverScript: input.voiceoverScript,
+    narrationUrl: resolvedNarrationPath ? `file://${resolvedNarrationPath}` : undefined,
     template: input.template,
     aspectRatio: input.aspectRatio,
     palette,
   });
 
-  return { props, processedImagePath: resolvedImagePath };
+  return {
+    props,
+    processedImagePath: resolvedImagePath,
+    narrationPath: resolvedNarrationPath,
+  };
 }
