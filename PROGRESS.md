@@ -177,3 +177,27 @@ Clients can now provide a voiceover script and get a video with real synthesized
 
 ### Cost impact
 - `piper-tts` Python package: free, open source. Voice model: free (rhasspy/piper-voices on HuggingFace). Zero per-video cost change.
+
+---
+
+## Sprint 6 — 2026-06-20
+
+### What was built
+- `src/cli.ts` — full CLI entry point. Parses `--image`, `--brand`, `--headline`, `--template`, `--ratio` (required) plus `--subheadline`, `--script`, `--out` (optional). Calls `buildVideoJob`, copies processed assets into `public/processed/` (so Remotion's dev server can serve them as relative URLs), then spawns `remotion render` to produce an MP4.
+- `public/processed/` directory — where processed images and narration WAVs land before a render. Remotion serves this automatically as static assets.
+- `package.json` — added `"cli": "ts-node src/cli.ts"` script.
+- `src/__tests__/cli.test.ts` — 5 unit tests: missing args exits 1, --help exits 0, buildVideoJob called with correct flags, processed image copied to public/, correct composition ID passed to remotion render.
+
+### What it achieves
+First time the whole pipeline can be triggered with a single command from the terminal. A developer (or a future web handler) just runs `npm run cli -- --image product.jpg --brand "#FF5500" --headline "Buy Now" --template Minimal --ratio 16:9` and gets an MP4. No manual step-by-step needed.
+
+### Tests added
+- 5 unit tests in `src/__tests__/cli.test.ts`
+
+### Known issues / left undone
+- CLI hasn't been tested with a real end-to-end render yet — that's the next demo step.
+- No Remotion Lambda setup yet.
+- SQS job queue not built.
+
+### Cost impact
+- No new paid dependencies. Zero per-video cost change.
