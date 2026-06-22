@@ -311,3 +311,31 @@ One failed rembg or Piper call no longer kills the job — it retries up to 3 ti
 
 ### Cost impact
 - Retries could in rare cases double the cost of a failed stage (e.g., 3 rembg attempts instead of 1). Expected case: 1 attempt per job. Retry path is exceptional. No change to baseline per-video cost.
+
+---
+
+## Sprint 11 — 2026-06-21
+
+### What was built
+- `src/monitoring/costTracker.ts` — `estimateRenderCost(durationSeconds)` returns per-render cost breakdown: Lambda GB-seconds (2048 MB at $0.0000166667/GB-s) + fixed S3 cost (~$0.000028). `logRenderCost(jobId, estimate)` writes structured cost log to console. All values rounded to 6 decimal places.
+- `src/lambda/renderOnLambda.ts` — wires in cost tracking: records start time before `pollUntilDone`, computes elapsed seconds after completion, logs cost with render ID.
+- `scripts/setup_cost_monitoring.ts` — one-time setup (`npm run monitoring:setup`). Creates SNS topic `videoed-cost-alerts`, subscribes the alert email. Creates two CloudWatch alarms: (1) billing alarm in `us-east-1` fires when estimated AWS monthly charges ≥ $10; (2) Lambda invocation alarm fires when invocations ≥ 500/hour. Both thresholds configurable via env vars. Billing alarm must live in `us-east-1` — that's where AWS publishes billing metrics.
+- `package.json` — added `monitoring:setup` script.
+- `RESOURCES.md` — added rows for SQS (Sprint 8, real cost), CloudWatch (Sprint 11), SNS (Sprint 11).
+- `@aws-sdk/client-cloudwatch` + `@aws-sdk/client-sns` added as dependencies.
+
+### What it achieves
+Two-layer protection: per-render cost is logged every time (so you can see what individual jobs actually cost), and CloudWatch alarms fire if total AWS spend or render volume spikes unexpectedly. A runaway job loop or a billing surprise now sends an email before the damage is done.
+
+### Tests added
+- `src/__tests__/costTracker.test.ts` — 9 tests: zero-duration cost, 30s cost correctness, S3 always present, total = sum of parts, longer costs more, negative duration throws, precision rounding, logRenderCost doesn't throw, log output contains expected fields.
+
+### Known issues / left undone
+- `npm run monitoring:setup` not yet run — CloudWatch alarms not provisioned. Email confirmation required after first run.
+- Rate limiting on the `/api/jobs` and `/api/upload` endpoints not yet built — still on the production checklist.
+- Automated QA gates (contrast check, cutout quality check) not yet built.
+
+### Cost impact
+- CloudWatch: 2 alarms. Free tier covers 10 alarms — $0/month.
+- SNS: email notifications. Free tier covers 1,000/month — $0/month at this volume.
+- Cost tracking itself: zero cost (just console logging).

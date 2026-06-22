@@ -11,7 +11,9 @@ Every external tool, library, API, or paid service this project depends on gets 
 | chroma.js | Contrast math — picks readable text color against any background | Free, open source | N/A | Sprint 1 |
 | Piper TTS | Generates voiceover narration audio from script text | Free, self-hosted, CPU only | N/A — already the free default | Sprint 0 |
 | AWS S3 | Stores rendered output videos and intermediate assets | Pay-per-use, storage + egress. Fractions of a cent per video at this scale | N/A | Sprint 0 |
-| AWS SQS | Queues render jobs once past single-render local testing | Pay-per-use, negligible at low volume | N/A — needed once volume requires queueing | Planned, not yet added |
+| AWS SQS | Queues render jobs once past single-render local testing | Pay-per-use, $0.40/million requests. At 10k renders/month (3 calls each) ≈ $0.012/mo | N/A — needed once volume requires queueing | Sprint 8 |
+| AWS CloudWatch | Billing + Lambda invocation alarms. Alerts fire via SNS email | Free tier: 10 alarms free. We use 2. $0.10/alarm/mo after free tier | N/A | Sprint 11 |
+| AWS SNS | Delivers cost alert emails | Free tier: first 1,000 email notifications/mo free | N/A | Sprint 11 |
 | Hosted bg-removal API (fal.ai / Replicate) | Fallback only for product cutouts rembg handles badly (glass, fine edges) | ~$0.004–$0.02 per image | rembg is the default — this is opt-in per image, not a blanket swap | Planned, not yet added |
 | Paid TTS (e.g. ElevenLabs) | Higher-quality narration than Piper, opt-in upgrade | ~$0.01–$0.05 per video depending on script length | Piper is the default — this is an explicit upgrade, never silent | Planned, not yet added |
 

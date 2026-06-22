@@ -7,6 +7,7 @@ import { AspectRatio } from '../schemas/videoProps';
 import { VideoJob } from '../pipeline/buildVideoJob';
 import { uploadToS3 } from './uploadToS3';
 import { lambdaConfig, DEPLOY_STATE_FILE } from './config';
+import { estimateRenderCost, logRenderCost } from '../monitoring/costTracker';
 
 const DeployStateSchema = z.object({
   functionName: z.string().min(1),
@@ -91,5 +92,9 @@ export async function renderJobOnLambda(job: VideoJob): Promise<string> {
     outName: outKey,
   });
 
-  return pollUntilDone(bucketName, renderId, functionName, region);
+  const renderStartMs = Date.now();
+  const outputFile = await pollUntilDone(bucketName, renderId, functionName, region);
+  const durationSeconds = (Date.now() - renderStartMs) / 1000;
+  logRenderCost(renderId, estimateRenderCost(durationSeconds));
+  return outputFile;
 }

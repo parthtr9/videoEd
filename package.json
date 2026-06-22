@@ -14,7 +14,8 @@
     "lambda:deploy": "ts-node src/lambda/deploy.ts",
     "lambda:render": "ts-node src/cli.ts --lambda",
     "queue:setup": "ts-node scripts/setup_sqs.ts",
-    "queue:worker": "ts-node src/queue/worker.ts"
+    "queue:worker": "ts-node src/queue/worker.ts",
+    "monitoring:setup": "ts-node scripts/setup_cost_monitoring.ts"
   },
   "keywords": [],
   "author": "",
@@ -30,8 +31,10 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
+    "@aws-sdk/client-cloudwatch": "^3.1073.0",
     "@aws-sdk/client-iam": "^3.1073.0",
     "@aws-sdk/client-s3": "^3.1073.0",
+    "@aws-sdk/client-sns": "^3.1073.0",
     "@aws-sdk/client-sqs": "^3.1073.0",
     "@remotion/cli": "^4.0.481",
     "@remotion/lambda": "^4.0.481",
