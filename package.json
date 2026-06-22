@@ -28,6 +28,7 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
+    "@aws-sdk/client-iam": "^3.1073.0",
     "@aws-sdk/client-s3": "^3.1073.0",
     "@remotion/cli": "^4.0.481",
     "@remotion/lambda": "^4.0.481",
