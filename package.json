@@ -11,7 +11,9 @@
     "render": "npx remotion render src/index.ts",
     "cli": "ts-node src/cli.ts",
     "lambda:deploy": "ts-node src/lambda/deploy.ts",
-    "lambda:render": "ts-node src/cli.ts --lambda"
+    "lambda:render": "ts-node src/cli.ts --lambda",
+    "queue:setup": "ts-node scripts/setup_sqs.ts",
+    "queue:worker": "ts-node src/queue/worker.ts"
   },
   "keywords": [],
   "author": "",
@@ -30,6 +32,7 @@
   "dependencies": {
     "@aws-sdk/client-iam": "^3.1073.0",
     "@aws-sdk/client-s3": "^3.1073.0",
+    "@aws-sdk/client-sqs": "^3.1073.0",
     "@remotion/cli": "^4.0.481",
     "@remotion/lambda": "^4.0.481",
     "@remotion/player": "^4.0.481",

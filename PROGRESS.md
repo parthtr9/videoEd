@@ -230,3 +230,29 @@ Production rendering path is now complete. `npm run lambda:deploy` sets up all A
 
 ### Cost impact
 - AWS Lambda + S3 costs apply when using `--lambda`. Remotion Lambda: ~$0.001–0.01 per short clip (Lambda GB-seconds). S3: fractions of a cent per video stored. Both are pay-per-use with no idle cost.
+
+---
+
+## Sprint 8 — 2026-06-21
+
+### What was built
+- `scripts/setup_sqs.ts` — one-time setup script (`npm run queue:setup`). Creates `videoed-jobs-dlq` (dead-letter queue, 14-day retention) then `videoed-jobs` (main queue, 300s visibility timeout, 20s long-poll, 1-day retention, redrive to DLQ after 3 failures). Prints the `SQS_QUEUE_URL` to copy into `.env`.
+- `src/queue/config.ts` — validates `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `SQS_QUEUE_URL` at startup. Throws with clear message if any are missing.
+- `src/queue/enqueueJob.ts` — `enqueueJob(rawInput)`. Validates input with `JobInputSchema`, sends JSON to SQS, returns `MessageId`. This is what a web handler calls to submit a job without blocking.
+- `src/queue/worker.ts` — `processOnce()` polls SQS (long-poll, 1 message at a time), calls `buildVideoJob` + `renderJobOnLambda`, deletes message on success. Leaves message on failure so SQS retries automatically; after 3 failures it lands in the DLQ. `runWorker()` loops forever. Safe to run as a standalone process: `npm run queue:worker`.
+- `package.json` — added `queue:setup` and `queue:worker` scripts.
+
+### What it achieves
+Web requests no longer trigger renders synchronously. A client submits a job to SQS (sub-millisecond) and gets a job ID back immediately. The worker process picks it up and runs the full pipeline (bg removal → palette → narration → Lambda render) without blocking the web handler. If a render fails, SQS retries it 3 times before moving it to the dead-letter queue for inspection — no silent losses. This is what makes the system safe to run at volume.
+
+### Tests added
+- `src/__tests__/enqueueJob.test.ts` — 5 unit tests: returns MessageId, correct queue URL used, message body serialized correctly, invalid input rejected by Zod, no MessageId throws.
+- `src/__tests__/worker.test.ts` — 7 unit tests: empty queue no-op, buildVideoJob called with parsed body, renderJobOnLambda called with job, message deleted after success, message NOT deleted after failure, bad JSON skipped without throw, long-poll WaitTimeSeconds is 20.
+
+### Known issues / left undone
+- Queue not yet provisioned in AWS — run `npm run queue:setup` then add `SQS_QUEUE_URL` to `.env`.
+- Worker runs as a long-lived process — needs a host (EC2, ECS, or run locally). No auto-scaling or supervisor yet.
+- `@remotion/player` preview not yet built.
+
+### Cost impact
+- SQS: first 1M requests/month free, then $0.40 per million. At 10,000 videos/month (3 SQS calls per video: send + receive + delete) = 30,000 requests = effectively free. No change to per-video cost.
