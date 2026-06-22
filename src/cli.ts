@@ -1,9 +1,10 @@
+import 'dotenv/config';
 import path from 'path';
 import fs from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { buildVideoJob } from './pipeline/buildVideoJob';
-import { AspectRatio, ASPECT_RATIO_DIMENSIONS } from './schemas/videoProps';
+import { AspectRatio } from './schemas/videoProps';
 
 const execFileAsync = promisify(execFile);
 
@@ -46,8 +47,52 @@ Optional:
   --subheadline  Secondary text line (max 160 chars)
   --script       Voiceover narration script (max 500 chars)
   --out          Output directory (default: ./out)
+  --lambda       Render on AWS Lambda instead of locally
   --help         Show this message
 `);
+}
+
+async function renderLocal(job: Awaited<ReturnType<typeof buildVideoJob>>, outputDir: string): Promise<string> {
+  fs.mkdirSync(PUBLIC_PROCESSED, { recursive: true });
+
+  const imageFilename = path.basename(job.processedImagePath);
+  fs.copyFileSync(job.processedImagePath, path.join(PUBLIC_PROCESSED, imageFilename));
+
+  let publicNarrationUrl: string | undefined;
+  if (job.narrationPath) {
+    const narrationFilename = path.basename(job.narrationPath);
+    fs.copyFileSync(job.narrationPath, path.join(PUBLIC_PROCESSED, narrationFilename));
+    publicNarrationUrl = `/processed/${narrationFilename}`;
+  }
+
+  const renderProps = {
+    ...job.props,
+    productImageUrl: `/processed/${imageFilename}`,
+    narrationUrl: publicNarrationUrl,
+  };
+
+  const ratio = job.props.aspectRatio as AspectRatio;
+  const compositionId = `ProductVideo-${ratio.replace(':', 'x')}`;
+  const outputFile = path.join(outputDir, `video_${ratio.replace(':', 'x')}.mp4`);
+
+  try {
+    await execFileAsync(
+      REMOTION_BIN,
+      ['render', 'src/index.ts', compositionId, outputFile, `--props=${JSON.stringify(renderProps)}`],
+      { cwd: path.join(__dirname, '..') },
+    );
+  } catch (err: unknown) {
+    const stderr = (err as { stderr?: string }).stderr ?? '';
+    const msg = stderr.trim() || (err instanceof Error ? err.message : String(err));
+    throw new Error(`Remotion render failed — ${msg}`);
+  }
+
+  return outputFile;
+}
+
+async function renderLambda(job: Awaited<ReturnType<typeof buildVideoJob>>): Promise<string> {
+  const { renderJobOnLambda } = await import('./lambda/renderOnLambda');
+  return renderJobOnLambda(job);
 }
 
 async function main(): Promise<void> {
@@ -67,9 +112,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const useLambda = args['lambda'] === 'true';
   const outputDir = path.resolve(args['out'] ?? './out');
   fs.mkdirSync(outputDir, { recursive: true });
-  fs.mkdirSync(PUBLIC_PROCESSED, { recursive: true });
 
   console.log('[1/3] Processing image and deriving palette...');
 
@@ -84,49 +129,14 @@ async function main(): Promise<void> {
     aspectRatio: args['ratio']!,
   });
 
-  // Copy processed assets into public/ so Remotion's dev server can serve them
-  const imageFilename = path.basename(job.processedImagePath);
-  const publicImagePath = path.join(PUBLIC_PROCESSED, imageFilename);
-  fs.copyFileSync(job.processedImagePath, publicImagePath);
+  console.log(`[2/3] Rendering (${useLambda ? 'Lambda' : 'local'})...`);
+  const output = useLambda ? await renderLambda(job) : await renderLocal(job, outputDir);
 
-  const publicImageUrl = `/processed/${imageFilename}`;
-
-  let publicNarrationUrl: string | undefined;
-  if (job.narrationPath) {
-    const narrationFilename = path.basename(job.narrationPath);
-    const publicNarrationPath = path.join(PUBLIC_PROCESSED, narrationFilename);
-    fs.copyFileSync(job.narrationPath, publicNarrationPath);
-    publicNarrationUrl = `/processed/${narrationFilename}`;
+  console.log('[3/3] Done.');
+  console.log(`Output: ${output}`);
+  if (!useLambda) {
+    console.log(`Size:   ${(fs.statSync(output).size / 1024 / 1024).toFixed(1)} MB`);
   }
-
-  // Rebuild props with public/ relative URLs for Remotion
-  const renderProps = {
-    ...job.props,
-    productImageUrl: publicImageUrl,
-    narrationUrl: publicNarrationUrl,
-  };
-
-  const ratio = job.props.aspectRatio as AspectRatio;
-  const compositionId = `ProductVideo-${ratio.replace(':', 'x')}`;
-  const outputFile = path.join(outputDir, `video_${ratio.replace(':', 'x')}.mp4`);
-
-  console.log(`[2/3] Rendering composition ${compositionId}...`);
-
-  try {
-    await execFileAsync(
-      REMOTION_BIN,
-      ['render', 'src/index.ts', compositionId, outputFile, `--props=${JSON.stringify(renderProps)}`],
-      { cwd: path.join(__dirname, '..') },
-    );
-  } catch (err: unknown) {
-    const stderr = (err as { stderr?: string }).stderr ?? '';
-    const msg = stderr.trim() || (err instanceof Error ? err.message : String(err));
-    throw new Error(`Remotion render failed — ${msg}`);
-  }
-
-  console.log(`[3/3] Done.`);
-  console.log(`Output: ${outputFile}`);
-  console.log(`Size:   ${(fs.statSync(outputFile).size / 1024 / 1024).toFixed(1)} MB`);
 }
 
 main().catch((err: Error) => {

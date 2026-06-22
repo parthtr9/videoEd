@@ -201,3 +201,32 @@ First time the whole pipeline can be triggered with a single command from the te
 
 ### Cost impact
 - No new paid dependencies. Zero per-video cost change.
+
+---
+
+## Sprint 7 — 2026-06-21
+
+### What was built
+- `src/lambda/config.ts` — loads and validates AWS env vars (ACCESS_KEY, SECRET, REGION) at startup. Exports `lambdaConfig` with `region` typed as `AwsRegion` for Remotion.
+- `src/lambda/deploy.ts` — one-time setup script (`npm run lambda:deploy`). Calls `getOrCreateBucket` (auto-named by Remotion, deterministic per AWS account), `deployFunction`, `deploySite`. Saves `{ functionName, serveUrl, bucketName }` to `.remotion-deploy.json`.
+- `src/lambda/uploadToS3.ts` — uploads a local file to S3 with correct MIME type, returns the HTTPS URL. Accepts `bucketName` as parameter (read from deploy state, not hardcoded).
+- `src/lambda/renderOnLambda.ts` — reads `.remotion-deploy.json`, uploads processed image + narration WAV to S3, calls `renderMediaOnLambda`, polls `getRenderProgress` every 2s until done or 5min timeout. Returns S3 output URL.
+- `src/cli.ts` — added `--lambda` flag. Lazy-imports `renderJobOnLambda` only when flag present (keeps local renders free of AWS deps).
+- `package.json` — added `lambda:deploy` and `lambda:render` scripts.
+- `dotenv` + `@remotion/lambda` + `@aws-sdk/client-s3` added as dependencies.
+- `REMOTION_S3_BUCKET` removed from required env vars — bucket is auto-created by Remotion.
+
+### What it achieves
+Production rendering path is now complete. `npm run lambda:deploy` sets up all AWS infra once. `npm run lambda:render -- --image ...` processes the pipeline locally then hands the render off to Lambda, which parallelizes frames across multiple Lambda invocations and stores the output on S3. Local rendering still works unchanged with `npm run cli`.
+
+### Tests added
+- `src/__tests__/uploadToS3.test.ts` — 6 unit tests: missing file, empty path validation, correct bucket/key passed to PutObjectCommand, HTTPS URL shape, PNG content-type, WAV content-type.
+- `src/__tests__/renderOnLambda.test.ts` — 7 unit tests: missing deploy state, image upload called, narration not uploaded when null, narration uploaded when set, correct composition ID, output URL returned, fatal error propagation.
+
+### Known issues / left undone
+- `npm run lambda:deploy` not yet run — AWS infrastructure not provisioned yet. Need to run it once with valid credentials.
+- SQS job queue not yet built.
+- `@remotion/player` preview not yet built.
+
+### Cost impact
+- AWS Lambda + S3 costs apply when using `--lambda`. Remotion Lambda: ~$0.001–0.01 per short clip (Lambda GB-seconds). S3: fractions of a cent per video stored. Both are pay-per-use with no idle cost.
