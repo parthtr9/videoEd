@@ -256,3 +256,32 @@ Web requests no longer trigger renders synchronously. A client submits a job to 
 
 ### Cost impact
 - SQS: first 1M requests/month free, then $0.40 per million. At 10,000 videos/month (3 SQS calls per video: send + receive + delete) = 30,000 requests = effectively free. No change to per-video cost.
+
+---
+
+## Sprint 9 — 2026-06-21
+
+### What was built
+- `app/page.tsx` — live preview page. Form fields: product image URL, brand color (color picker + hex input with live validation), headline, subheadline, template (Minimal/Bold/Luxury), aspect ratio (16:9 / 9:16 / 1:1). Palette derived client-side from brand color using `derivePalette`; updates on every keystroke. Submit button calls `/api/jobs`.
+- `app/components/VideoPreview.tsx` — `@remotion/player` component (client-side). Scales the composition to fit the preview area without triggering a real render. Shows controls.
+- `app/api/jobs/route.ts` — Next.js App Router API route. POST handler calls `enqueueJob`, returns `{ messageId }`. Returns 400 for validation errors, 500 for infra errors.
+- `app/layout.tsx` — minimal root layout.
+- `next.config.ts` — `transpilePackages` for ESM/non-standard packages (remotion, culori, chroma-js). Turbopack root fixed to avoid multi-lockfile workspace detection warning.
+- `tsconfig.json` — now used by Next.js (noEmit, isolatedModules, react-jsx, node moduleResolution). `ignoreDeprecations: "6.0"` silences TS6 deprecation for `moduleResolution: node`.
+- `tsconfig.node.json` — separate config for ts-jest and ts-node (emits, rootDir-free, same moduleResolution).
+- `jest.config.js` — updated to use `tsconfig.node.json` so Jest/ts-jest stays unaffected by Next.js's tsconfig requirements.
+- `src/queue/config.ts` — refactored from module-level `queueConfig` constant to lazy `getQueueConfig()` function. Prevents build-time throws when `SQS_QUEUE_URL` is not in the environment.
+- `next` added as a dependency.
+
+### What it achieves
+Bad inputs get caught before any render is triggered. A client fills in the form and sees the exact composition — colors, layout, template — playing in the browser in real time. Only after they're happy do they click Submit, which drops the job into SQS. No wasted Lambda invocations on bad copy, wrong colors, or wrong aspect ratios.
+
+### Tests added
+- `src/__tests__/jobsRoute.test.ts` — 5 unit tests for POST /api/jobs: returns 200 + messageId, 400 for non-JSON, 400 for validation error, 500 for infra error, enqueueJob called with parsed body.
+
+### Known issues / left undone
+- UI not visually verified in a browser — `npm run dev` compiles clean, and `next build` passes, but visual review not done. Run `npm run dev` and open http://localhost:3000 to see the preview.
+- `npm run queue:setup` not yet run — need to run once to get `SQS_QUEUE_URL` for `.env`.
+
+### Cost impact
+- `next` package: free, open source. Zero per-video cost change. Preview runs entirely client-side — no server-side rendering cost per preview.

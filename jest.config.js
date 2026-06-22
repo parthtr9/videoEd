@@ -6,4 +6,7 @@ module.exports = {
   testMatch: ['**/__tests__/**/*.test.ts'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
   collectCoverageFrom: ['src/**/*.{ts,tsx}', '!src/**/__tests__/**'],
+  transform: {
+    '^.+\\.(ts|tsx)$': ['ts-jest', { tsconfig: './tsconfig.node.json' }],
+  },
 };

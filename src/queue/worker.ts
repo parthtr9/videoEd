@@ -1,20 +1,21 @@
 import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand } from '@aws-sdk/client-sqs';
 import { buildVideoJob } from '../pipeline/buildVideoJob';
 import { renderJobOnLambda } from '../lambda/renderOnLambda';
-import { queueConfig } from './config';
+import { getQueueConfig } from './config';
 
-const sqsClient = new SQSClient({
-  region: queueConfig.AWS_REGION,
-  credentials: {
-    accessKeyId: queueConfig.AWS_ACCESS_KEY_ID,
-    secretAccessKey: queueConfig.AWS_SECRET_ACCESS_KEY,
-  },
-});
+function makeClient(): SQSClient {
+  const cfg = getQueueConfig();
+  return new SQSClient({
+    region: cfg.AWS_REGION,
+    credentials: { accessKeyId: cfg.AWS_ACCESS_KEY_ID, secretAccessKey: cfg.AWS_SECRET_ACCESS_KEY },
+  });
+}
 
 export async function processOnce(): Promise<void> {
-  const response = await sqsClient.send(
+  const cfg = getQueueConfig();
+  const response = await makeClient().send(
     new ReceiveMessageCommand({
-      QueueUrl: queueConfig.SQS_QUEUE_URL,
+      QueueUrl: cfg.SQS_QUEUE_URL,
       MaxNumberOfMessages: 1,
       WaitTimeSeconds: 20, // long polling — reduces empty polls and cost
     }),
@@ -39,9 +40,9 @@ export async function processOnce(): Promise<void> {
       const outputUrl = await renderJobOnLambda(job);
       console.log(`[worker] Done: ${outputUrl}`);
 
-      await sqsClient.send(
+      await makeClient().send(
         new DeleteMessageCommand({
-          QueueUrl: queueConfig.SQS_QUEUE_URL,
+          QueueUrl: cfg.SQS_QUEUE_URL,
           ReceiptHandle: message.ReceiptHandle,
         }),
       );

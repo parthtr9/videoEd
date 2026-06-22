@@ -1,11 +1,11 @@
 jest.mock('@aws-sdk/client-sqs');
 jest.mock('../queue/config', () => ({
-  queueConfig: {
+  getQueueConfig: () => ({
     AWS_ACCESS_KEY_ID: 'test-key',
     AWS_SECRET_ACCESS_KEY: 'test-secret',
     AWS_REGION: 'us-east-1',
     SQS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123456789/videoed-jobs',
-  },
+  }),
 }));
 
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';

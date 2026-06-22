@@ -1,21 +1,22 @@
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { JobInputSchema } from '../pipeline/buildVideoJob';
-import { queueConfig } from './config';
+import { getQueueConfig } from './config';
 
-const sqsClient = new SQSClient({
-  region: queueConfig.AWS_REGION,
-  credentials: {
-    accessKeyId: queueConfig.AWS_ACCESS_KEY_ID,
-    secretAccessKey: queueConfig.AWS_SECRET_ACCESS_KEY,
-  },
-});
+function makeClient(): SQSClient {
+  const cfg = getQueueConfig();
+  return new SQSClient({
+    region: cfg.AWS_REGION,
+    credentials: { accessKeyId: cfg.AWS_ACCESS_KEY_ID, secretAccessKey: cfg.AWS_SECRET_ACCESS_KEY },
+  });
+}
 
 export async function enqueueJob(rawInput: unknown): Promise<string> {
   const input = JobInputSchema.parse(rawInput);
+  const cfg = getQueueConfig();
 
-  const result = await sqsClient.send(
+  const result = await makeClient().send(
     new SendMessageCommand({
-      QueueUrl: queueConfig.SQS_QUEUE_URL,
+      QueueUrl: cfg.SQS_QUEUE_URL,
       MessageBody: JSON.stringify(input),
     }),
   );
