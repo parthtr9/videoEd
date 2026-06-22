@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
+import { withRetry } from '../utils/retry';
 
 const execFileAsync = promisify(execFile);
 
@@ -24,13 +25,18 @@ export async function synthesizeSpeech(input: NarrationInput): Promise<string> {
     throw new Error(`synthesizeSpeech: model not found at ${modelPath}`);
   }
 
-  try {
-    await execFileAsync('python3', [SCRIPT_PATH, text, outputPath, modelPath]);
-  } catch (err: unknown) {
-    const stderr = (err as { stderr?: string }).stderr ?? '';
-    const msg = stderr.trim() || (err instanceof Error ? err.message : String(err));
-    throw new Error(`synthesizeSpeech: Piper failed — ${msg}`);
-  }
+  await withRetry(
+    async () => {
+      try {
+        await execFileAsync('python3', [SCRIPT_PATH, text, outputPath, modelPath]);
+      } catch (err: unknown) {
+        const stderr = (err as { stderr?: string }).stderr ?? '';
+        const msg = stderr.trim() || (err instanceof Error ? err.message : String(err));
+        throw new Error(`Piper failed — ${msg}`);
+      }
+    },
+    { maxAttempts: 3, baseDelayMs: 500, label: 'synthesizeSpeech' },
+  );
 
   if (!fs.existsSync(outputPath)) {
     throw new Error(`synthesizeSpeech: output WAV was not created at ${outputPath}`);

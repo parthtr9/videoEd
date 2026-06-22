@@ -13,7 +13,9 @@ export default function HomePage() {
   const [brandColor, setBrandColor] = useState('#FF5500');
   const [headline, setHeadline] = useState('Your Product');
   const [subheadline, setSubheadline] = useState('');
-  const [productImageUrl, setProductImageUrl] = useState('');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageBlobUrl, setImageBlobUrl] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
   const [template, setTemplate] = useState<Template>('Minimal');
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
   const [submitting, setSubmitting] = useState(false);
@@ -23,6 +25,28 @@ export default function HomePage() {
   const isValidHex = /^#[0-9a-fA-F]{6}$/.test(brandColor);
   const palette = isValidHex ? derivePalette(brandColor) : derivePalette('#FF5500');
   const dims = ASPECT_RATIO_DIMENSIONS[aspectRatio];
+  // Preview uses local blob URL if file is selected, else typed URL
+  const previewImageUrl = imageBlobUrl || imageUrl || 'https://placehold.co/400x400/e0e0e0/999999?text=Product';
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    if (imageBlobUrl) URL.revokeObjectURL(imageBlobUrl);
+    if (file) {
+      setImageFile(file);
+      setImageBlobUrl(URL.createObjectURL(file));
+      setImageUrl(''); // clear URL input when file selected
+    } else {
+      setImageFile(null);
+      setImageBlobUrl('');
+    }
+  }
+
+  function handleUrlChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setImageUrl(e.target.value);
+    if (imageBlobUrl) URL.revokeObjectURL(imageBlobUrl);
+    setImageFile(null);
+    setImageBlobUrl('');
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -30,11 +54,22 @@ export default function HomePage() {
     setSubmitError(null);
     setMessageId(null);
     try {
+      // Upload file to S3 first if one was selected
+      let finalImageUrl = imageUrl;
+      if (imageFile) {
+        const fd = new FormData();
+        fd.append('image', imageFile);
+        const uploadRes = await fetch('/api/upload', { method: 'POST', body: fd });
+        const uploadData = await uploadRes.json() as { url?: string; error?: string };
+        if (!uploadRes.ok) throw new Error(uploadData.error ?? 'Image upload failed');
+        finalImageUrl = uploadData.url ?? '';
+      }
+
       const res = await fetch('/api/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          productImagePath: productImageUrl || '/tmp/placeholder.png',
+          productImagePath: finalImageUrl || '/tmp/placeholder.png',
           outputDir: '/tmp/videoed-out',
           brandColor,
           headline,
@@ -59,10 +94,22 @@ export default function HomePage() {
       <section style={{ width: 340, flexShrink: 0 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 24, marginTop: 0 }}>VideoEd</h1>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <label>
-            <span style={LABEL}>Product Image URL</span>
-            <input style={INPUT} type="url" value={productImageUrl} onChange={e => setProductImageUrl(e.target.value)} placeholder="https://..." />
-          </label>
+          <fieldset style={{ border: '1px solid #ddd', borderRadius: 6, padding: '10px 12px', margin: 0 }}>
+            <legend style={{ fontSize: 13, fontWeight: 600, color: '#444', padding: '0 4px' }}>Product Image</legend>
+            <label style={{ display: 'block', marginBottom: 8 }}>
+              <input type="file" accept="image/*" onChange={handleFileChange} style={{ fontSize: 13 }} />
+              {imageFile && <span style={{ display: 'block', fontSize: 12, color: '#666', marginTop: 4 }}>{imageFile.name}</span>}
+            </label>
+            <div style={{ fontSize: 12, color: '#999', textAlign: 'center', marginBottom: 8 }}>— or paste URL —</div>
+            <input
+              style={INPUT}
+              type="url"
+              value={imageUrl}
+              onChange={handleUrlChange}
+              placeholder="https://..."
+              disabled={!!imageFile}
+            />
+          </fieldset>
           <label>
             <span style={LABEL}>Brand Color</span>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -120,7 +167,7 @@ export default function HomePage() {
         <p style={{ fontSize: 13, color: '#888', marginTop: 0, marginBottom: 16 }}>Live preview — updates as you type. No render triggered.</p>
         <VideoPreview
           props={{
-            productImageUrl: productImageUrl || 'https://placehold.co/400x400/e0e0e0/999999?text=Product',
+            productImageUrl: previewImageUrl,
             brandColor,
             headline,
             subheadline: subheadline || undefined,

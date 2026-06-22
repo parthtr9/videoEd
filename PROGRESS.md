@@ -285,3 +285,29 @@ Bad inputs get caught before any render is triggered. A client fills in the form
 
 ### Cost impact
 - `next` package: free, open source. Zero per-video cost change. Preview runs entirely client-side — no server-side rendering cost per preview.
+
+---
+
+## Sprint 10 — 2026-06-21
+
+### What was built
+- `src/utils/retry.ts` — `withRetry(fn, options)` utility. Exponential backoff (baseDelayMs × 2^(attempt-1)). Accepts maxAttempts, baseDelayMs, label for log messages. Wraps non-Error rejections. Error message on final failure includes label + attempt count + original message.
+- `src/pipeline/backgroundRemoval.ts` — `removeBackground` now wraps the `python3` spawn in `withRetry` (3 attempts, 500ms base). Transient rembg failures (model loading, memory pressure) retry automatically.
+- `src/pipeline/narration.ts` — `synthesizeSpeech` now wraps the Piper spawn in `withRetry` (3 attempts, 500ms base). Same rationale.
+- `src/lambda/uploadToS3.ts` — S3 `PutObjectCommand` wrapped in `withRetry` (3 attempts, 1000ms base). Transient network errors retry before failing the job.
+- `app/api/upload/route.ts` — New API route. Accepts multipart form data (`image` field), writes to OS temp dir, uploads to S3 via `uploadToS3` (reads bucket name from `.remotion-deploy.json`), returns `{ url }`. Cleans up temp file in `finally` block. Returns 400 if no image, 500 if deploy state missing or upload fails.
+- `app/page.tsx` — Image upload added to form. File input + "or paste URL" input. Selecting a file creates a local blob URL for the player preview (no network round-trip). On submit, if file selected: POST to `/api/upload` first, get S3 URL, then submit job with that URL.
+
+### What it achieves
+One failed rembg or Piper call no longer kills the job — it retries up to 3 times with backoff before giving up. S3 upload blips (common with Lambda cold-start traffic) also retry. This is what makes the pipeline reliable enough to run unattended at volume. Image upload lets clients use local files directly instead of needing a public URL first.
+
+### Tests added
+- `src/__tests__/retry.test.ts` — 7 tests: first-try success, retry on second attempt, exhausted retries, error message format, succeeds on last attempt, non-Error wrapping, exponential backoff delays.
+- `src/__tests__/uploadImageRoute.test.ts` — 5 tests: missing image field → 400, success → 200 + URL, correct bucketName passed to uploadToS3, missing deploy state → 500, temp file cleaned up.
+
+### Known issues / left undone
+- Retry delay in tests uses `baseDelayMs: 0` — real production retries will wait (500ms–4s for bg/narration, 1s–4s for S3). This is intentional.
+- No retry on `renderJobOnLambda` — Lambda handles its own retries internally; SQS DLQ catches job-level failures.
+
+### Cost impact
+- Retries could in rare cases double the cost of a failed stage (e.g., 3 rembg attempts instead of 1). Expected case: 1 attempt per job. Retry path is exceptional. No change to baseline per-video cost.

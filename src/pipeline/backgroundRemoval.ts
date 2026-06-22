@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
+import { withRetry } from '../utils/retry';
 
 const execFileAsync = promisify(execFile);
 
@@ -22,13 +23,18 @@ export async function removeBackground(input: RemoveBgInput): Promise<string> {
     throw new Error(`removeBackground: input file not found: ${inputPath}`);
   }
 
-  try {
-    await execFileAsync('python3', [SCRIPT_PATH, inputPath, outputPath]);
-  } catch (err: unknown) {
-    const stderr = (err as { stderr?: string }).stderr ?? '';
-    const msg = stderr.trim() || (err instanceof Error ? err.message : String(err));
-    throw new Error(`removeBackground: rembg failed — ${msg}`);
-  }
+  await withRetry(
+    async () => {
+      try {
+        await execFileAsync('python3', [SCRIPT_PATH, inputPath, outputPath]);
+      } catch (err: unknown) {
+        const stderr = (err as { stderr?: string }).stderr ?? '';
+        const msg = stderr.trim() || (err instanceof Error ? err.message : String(err));
+        throw new Error(`rembg failed — ${msg}`);
+      }
+    },
+    { maxAttempts: 3, baseDelayMs: 500, label: 'removeBackground' },
+  );
 
   if (!fs.existsSync(outputPath)) {
     throw new Error(`removeBackground: output file was not created at ${outputPath}`);

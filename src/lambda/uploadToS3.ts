@@ -3,6 +3,7 @@ import path from 'path';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { z } from 'zod';
 import { lambdaConfig } from './config';
+import { withRetry } from '../utils/retry';
 
 const UploadInputSchema = z.object({
   localPath: z.string().min(1),
@@ -34,13 +35,16 @@ export async function uploadToS3(input: UploadInput): Promise<string> {
   const client = new S3Client({ region: lambdaConfig.region });
   const body = fs.readFileSync(localPath);
 
-  await client.send(
-    new PutObjectCommand({
-      Bucket: bucketName,
-      Key: s3Key,
-      Body: body,
-      ContentType: getMimeType(localPath),
-    }),
+  await withRetry(
+    () => client.send(
+      new PutObjectCommand({
+        Bucket: bucketName,
+        Key: s3Key,
+        Body: body,
+        ContentType: getMimeType(localPath),
+      }),
+    ),
+    { maxAttempts: 3, baseDelayMs: 1000, label: 's3-upload' },
   );
 
   return `https://${bucketName}.s3.${lambdaConfig.AWS_REGION}.amazonaws.com/${s3Key}`;
